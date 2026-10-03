@@ -88,7 +88,30 @@ tbody tr:hover{background:#1e1e2b}
 .bar{height:6px;background:var(--bg);border-radius:9px;overflow:hidden;min-width:100px}
 .bar i{display:block;height:100%;background:var(--gold)}
 
-@media(max-width:820px){
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:18px;margin-bottom:22px}
+.panel h3{font-size:22px;margin-bottom:14px}
+.cols{display:flex;align-items:flex-end;gap:10px;height:200px}
+.col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;min-width:0}
+.col i{display:block;width:100%;max-width:48px;background:linear-gradient(var(--gold),#8a7230);border-radius:6px 6px 0 0;min-height:3px}
+.col b{font-size:12px}.col span{font-size:11px;color:var(--mute);white-space:nowrap}
+.mets{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px}
+.met{background:none;border:0;border-right:1px solid var(--line);border-bottom:3px solid transparent;padding:14px 16px;text-align:left}
+.met:last-child{border-right:0}
+.met.on{background:var(--panel2);border-bottom-color:var(--gold)}
+.met b{display:block;font-size:30px;font-family:'Cormorant Garamond',serif}
+.met span{font-size:12px;color:var(--mute)}
+.up{color:var(--green)}.dn{color:var(--red)}
+.chart{position:relative}
+.tip{position:absolute;pointer-events:none;background:var(--panel2);border:1px solid var(--line);padding:6px 10px;border-radius:8px;font-size:12px;transform:translate(-50%,-120%);white-space:nowrap}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+.rank .it{display:flex;align-items:center;gap:10px;margin:12px 0}
+.rank .it span{width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .it .bar{flex:1}
+.seg button{background:var(--bg);border:1px solid var(--line);color:var(--mute);padding:7px 12px}
+.seg button:first-child{border-radius:8px 0 0 8px}.seg button:last-child{border-radius:0 8px 8px 0}
+.seg button.on{color:var(--gold);border-color:var(--gold)}
+@media(max-width:820px){.g2{grid-template-columns:1fr}.met b{font-size:22px}
+
  #app{grid-template-columns:1fr}
  aside{position:static;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;padding:12px}
  nav{flex-direction:row;margin:0;flex:1;overflow-x:auto}
@@ -182,7 +205,7 @@ async function reload() {
   $('#view').innerHTML = '<div class="empty">Загрузка…</div>';
   try {
     const [u, v] = await Promise.all([api('adminListUsers'), api('adminListVideos')]);
-    S.users = u.users; S.videos = v.videos;
+    S.users = u.users; S.videos = v.videos; S.stats = null;
     render();
   } catch (err) { $('#view').innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; }
 }
@@ -203,7 +226,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = async () => {
 });
 function render() { ({ overview: vOverview, users: vUsers, videos: vVideos, logs: vLogs })[S.tab](); }
 
-function vOverview() {
+function vOverviewOld() {
   const c = s => S.users.filter(u => u.status === s).length;
   const online = S.users.filter(isOnline);
   const ids = lessonIds();
@@ -227,6 +250,87 @@ function vOverview() {
     <td><div class="bar"><i style="width:${n / max * 100}%"></i></div></td></tr>`; }).join('')
     : '<tr><td colspan="4" class="empty">Уроков пока нет. Добавьте видео на вкладке «Уроки и видео».</td></tr>'}
   </tbody></table></div>`;
+}
+
+/* ---------- аналитика ---------- */
+const METRICS = { views: 'Просмотры', viewers: 'Зрители', logins: 'Входы' };
+const personName = who => { const w = String(who).toLowerCase(); const u = S.users.find(x => x.email.toLowerCase() === w || x.login.toLowerCase() === w); return (u && u.name) || who; };
+function setPeriod(n) { S.days = n; S.stats = null; vOverview(); }
+function setMetric(m) { S.metric = m; vOverview(); }
+async function loadStats(n) {
+  try { S.stats = { n, d: await api('adminStats', { days: n }) }; }
+  catch (e) { S.stats = { n, err: e.message }; }
+  S.loadingN = null;
+  if (S.tab === 'overview' && (S.days || 28) === n) vOverview();
+}
+
+function areaChart(el, pts, dates, label) {
+  const W = 800, H = 260, l = 34, r = 8, t = 12, b = 26, n = pts.length;
+  const top = Math.max(4, Math.ceil(Math.max(...pts) / 4) * 4);
+  const x = i => l + (n > 1 ? i * (W - l - r) / (n - 1) : 0), y = v => t + (H - t - b) * (1 - v / top);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = top * k / 4; g += `<line x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}" stroke="#2c2c3e"/><text x="${l - 6}" y="${y(v) + 4}" text-anchor="end" fill="#8c8ba1" font-size="11">${v}</text>`; }
+  const step = Math.ceil(n / 7);
+  dates.forEach((d, i) => { if (i % step === 0) g += `<text x="${x(i)}" y="${H - 7}" text-anchor="middle" fill="#8c8ba1" font-size="11">${d.slice(8)}.${d.slice(5, 7)}</text>`; });
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block"><defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9A84C" stop-opacity=".35"/><stop offset="1" stop-color="#C9A84C" stop-opacity="0"/></linearGradient></defs>${g}
+    <path d="${line} L${x(n - 1)} ${y(0)} L${x(0)} ${y(0)}Z" fill="url(#ag)"/><path d="${line}" fill="none" stroke="#C9A84C" stroke-width="2.2" stroke-linejoin="round"/>
+    <line id="cl" y1="${t}" y2="${H - b}" stroke="#8c8ba1" stroke-dasharray="3" opacity="0"/><circle id="cd" r="5" fill="#C9A84C" stroke="#1a1a24" stroke-width="2" opacity="0"/></svg><div class="tip hidden"></div>`;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), cl = el.querySelector('#cl'), cd = el.querySelector('#cd');
+  svg.onmousemove = e => {
+    const rc = svg.getBoundingClientRect(), px = (e.clientX - rc.left) / rc.width * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round((px - l) / (W - l - r) * (n - 1))));
+    cl.setAttribute('x1', x(i)); cl.setAttribute('x2', x(i)); cl.setAttribute('opacity', 1);
+    cd.setAttribute('cx', x(i)); cd.setAttribute('cy', y(pts[i])); cd.setAttribute('opacity', 1);
+    tip.classList.remove('hidden'); tip.style.left = (x(i) / W * rc.width) + 'px'; tip.style.top = (y(pts[i]) / H * rc.height) + 'px';
+    const d = dates[i]; tip.innerHTML = `${d.slice(8)}.${d.slice(5, 7)}.${d.slice(0, 4)}<br><b>${label}: ${pts[i]}</b>`;
+  };
+  svg.onmouseleave = () => { tip.classList.add('hidden'); cl.setAttribute('opacity', 0); cd.setAttribute('opacity', 0); };
+}
+
+function vOverview() {
+  const c = s => S.users.filter(u => u.status === s).length;
+  const online = S.users.filter(isOnline);
+  const ids = lessonIds();
+  const n = S.days || 28, m = S.metric || 'views';
+  const counts = ids.map(id => S.users.filter(u => u.status === 'active' && u.lessons.includes(id)).length);
+  const max = Math.max(1, ...counts);
+  const st = S.stats && S.stats.n === n ? S.stats : null;
+  if (!st && S.loadingN !== n) { S.loadingN = n; loadStats(n); }
+  const d = st && st.d;
+  const delta = k => { if (!d) return ''; const a = d.totals.cur[k], p = d.totals.prev[k]; if (!p) return a ? '<span class="up">новое</span>' : '';
+    const v = Math.round((a - p) / p * 100); return `<span class="${v >= 0 ? 'up' : 'dn'}">${v >= 0 ? '▲' : '▼'} ${Math.abs(v)}%</span>`; };
+  const lessonViews = d ? d.lessons : {};
+  const mv = Math.max(1, ...ids.map(id => lessonViews[id] || 0));
+  $('#view').innerHTML = `
+  <div class="top"><h2>Обзор</h2><div class="tools"><button class="btn ghost" onclick="reload()">Обновить</button></div></div>
+  <div class="stats">
+    <div class="stat gold"><b>${S.users.length}</b><span>Всего учеников</span></div>
+    <div class="stat g"><b>${c('active')}</b><span>Активных</span></div>
+    <div class="stat y"><b>${c('pending')}</b><span>Ждут одобрения</span></div>
+    <div class="stat r"><b>${c('denied')}</b><span>Закрыт доступ</span></div>
+    <div class="stat"><b><span class="dot"></span>${online.length}</b><span>Смотрят сейчас</span></div>
+  </div>
+  ${c('pending') ? `<div class="panel"><h3>Новые заявки</h3>${S.users.filter(u => u.status === 'pending').map(u => `<div class="it" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
+    <span>${esc(u.name || u.email || u.login)} <span class="sub">${esc(u.email)}</span></span><button class="btn sm" onclick="editUser(${u.row})">Открыть доступ</button></div>`).join('')}</div>` : ''}
+  <div class="panel"><h3>Доступ по урокам</h3>
+    ${ids.length ? `<div class="cols">${ids.map((id, i) => `<div class="col" title="Урок ${id}: ${counts[i]} учеников, ${S.videos.filter(v => v.lessonId === id).length} частей">
+      <b>${counts[i]}</b><i style="height:${counts[i] / max * 150}px"></i><span>Урок ${id}</span></div>`).join('')}</div>
+    <div class="sub" style="margin-top:10px">Сколько активных учеников имеют доступ к уроку</div>` : '<div class="empty">Уроков пока нет</div>'}
+  </div>
+  <div class="panel">
+    <div class="top" style="margin-bottom:14px"><h3 style="margin:0">Аналитика</h3>
+      <div class="seg">${[7, 28, 90].map(k => `<button class="${k === n ? 'on' : ''}" onclick="setPeriod(${k})">${k} дн.</button>`).join('')}</div></div>
+    <div class="mets">${Object.keys(METRICS).map(k => `<button class="met ${k === m ? 'on' : ''}" onclick="setMetric('${k}')">
+      <span>${METRICS[k]}</span><b>${d ? d.totals.cur[k] : '…'}</b>${delta(k)}</button>`).join('')}</div>
+    <div class="chart" id="chart">${!st ? '<div class="empty">Загрузка аналитики…</div>' : st.err ? `<div class="empty">${esc(st.err)}<br><span class="sub">Проверьте, что в Code.gs добавлена функция adminStats и сделана новая версия деплоя.</span></div>` : ''}</div>
+    <div class="sub" style="margin-top:8px">Просмотр — запуск части урока. Сравнение с предыдущими ${n} дн.</div>
+  </div>
+  ${d ? `<div class="g2">
+    <div class="panel"><h3>Просмотры по урокам</h3><div class="rank">${ids.map(id => `<div class="it"><span>Урок ${id}</span><div class="bar"><i style="width:${(lessonViews[id] || 0) / mv * 100}%"></i></div><b>${lessonViews[id] || 0}</b></div>`).join('') || '<div class="sub">Нет данных</div>'}</div></div>
+    <div class="panel"><h3>Самые активные ученики</h3><div class="rank">${d.top.length ? d.top.map(t => `<div class="it"><span title="${esc(t.who)}">${esc(personName(t.who))}</span><div class="bar"><i style="width:${t.views / d.top[0].views * 100}%"></i></div><b>${t.views}</b></div>`).join('') : '<div class="sub">За этот период просмотров нет</div>'}</div></div>
+  </div>` : ''}`;
+  if (d) { const cur = d.daily.slice(-n); areaChart($('#chart'), cur.map(o => o[m]), cur.map(o => o.date), METRICS[m]); }
 }
 
 function vUsers() {
