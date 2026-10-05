@@ -161,6 +161,8 @@ tbody tr:hover{background:#1e1e2b}
 
 <script>
 const S = { url:'', key:'', users:[], videos:[], logs:[], tab:'overview', q:'', st:'all' };
+const MANAGERS = ['Ходжаев Фаррухджон', 'Нисоев Ансор', 'Бобоева Гулчехра', 'Каххоров Саидчон', 'Зухробуча', 'Рахматчон', 'Дилангез', 'Ахмаджон', 'Мунир'];
+const fmtDate = d => /^\d{4}-\d{2}-\d{2}/.test(d || '') ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : '—';
 const $ = s => document.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -226,33 +228,34 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = async () => {
 });
 function render() { ({ overview: vOverview, users: vUsers, videos: vVideos, logs: vLogs })[S.tab](); }
 
-function vOverviewOld() {
-  const c = s => S.users.filter(u => u.status === s).length;
-  const online = S.users.filter(isOnline);
-  const ids = lessonIds();
-  const max = Math.max(1, ...ids.map(id => S.users.filter(u => u.status === 'active' && u.lessons.includes(id)).length));
-  $('#view').innerHTML = `
-  <div class="top"><h2>Обзор</h2><button class="btn ghost" onclick="reload()">Обновить</button></div>
-  <div class="stats">
-    <div class="stat gold"><b>${S.users.length}</b><span>Всего учеников</span></div>
-    <div class="stat g"><b>${c('active')}</b><span>Активных</span></div>
-    <div class="stat y"><b>${c('pending')}</b><span>Ждут одобрения</span></div>
-    <div class="stat r"><b>${c('denied')}</b><span>Закрыт доступ</span></div>
-    <div class="stat"><b><span class="dot"></span>${online.length}</b><span>Смотрят сейчас</span></div>
-  </div>
-  ${c('pending') ? `<div class="tbl" style="margin-bottom:22px"><table><thead><tr><th>Новые заявки</th><th></th></tr></thead><tbody>
-    ${S.users.filter(u => u.status === 'pending').map(u => `<tr><td>${esc(u.name || u.email || u.login)}<div class="sub">${esc(u.email)}</div></td>
-    <td><div class="acts"><button class="btn sm" onclick="editUser(${u.row})">Открыть доступ</button></div></td></tr>`).join('')}
-  </tbody></table></div>` : ''}
-  <div class="tbl"><table><thead><tr><th>Урок</th><th>Частей</th><th>Учеников с доступом</th><th></th></tr></thead><tbody>
-  ${ids.length ? ids.map(id => { const n = S.users.filter(u => u.status === 'active' && u.lessons.includes(id)).length;
-    return `<tr><td>Урок ${id}</td><td>${S.videos.filter(v => v.lessonId === id).length}</td><td>${n}</td>
-    <td><div class="bar"><i style="width:${n / max * 100}%"></i></div></td></tr>`; }).join('')
-    : '<tr><td colspan="4" class="empty">Уроков пока нет. Добавьте видео на вкладке «Уроки и видео».</td></tr>'}
-  </tbody></table></div>`;
-}
-
 /* ---------- аналитика ---------- */
+const money = v => (Number(v) || 0).toLocaleString('ru-RU');
+const today = () => new Date().toLocaleDateString('sv-SE');
+const nm = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+function findDups(row) {
+  const email = nm($('#fEmail').value), login = nm($('#fLogin').value), name = nm($('#fName').value);
+  return S.users.filter(u => u.row !== row).map(u => {
+    const why = [];
+    if (email && (nm(u.email) === email || nm(u.login) === email)) why.push('почта');
+    if (login && (nm(u.login) === login || nm(u.email) === login)) why.push('логин');
+    if (name.length > 2 && nm(u.name) === name) why.push('имя');
+    return why.length ? { u, why } : null;
+  }).filter(Boolean);
+}
+function checkDup(row) {
+  const box = $('#dup'); if (!box) return;
+  const list = findDups(row);
+  box.innerHTML = list.map(({ u, why }) => {
+    const hard = why.includes('почта') || why.includes('логин');
+    return `<div style="margin-top:12px;padding:12px;border-radius:10px;border:1px solid ${hard ? 'var(--red)' : 'var(--yellow)'};background:${hard ? '#3d0f0f55' : '#3d320055'}">
+      <b style="color:${hard ? 'var(--red)' : 'var(--yellow)'}">${hard ? 'Такой ученик уже есть' : 'Возможно, это уже существующий ученик'}</b>
+      <span class="sub"> · совпадение: ${why.join(', ')}</span>
+      <div style="margin-top:8px"><b>${esc(u.name || '—')}</b> ${badge(u.status)}<div class="sub">${esc(u.email || u.login)}</div>
+      <div style="margin-top:4px">${chips(u.lessons)}</div>
+      <div class="sub" style="margin-top:4px">Сумма: ${u.amount !== '' ? money(u.amount) : '—'} · Добавлен: ${esc(u.added || '—')}</div></div>
+      <button type="button" class="btn ghost sm" style="margin-top:10px" onclick="editUser(${u.row})">Открыть этого ученика</button></div>`;
+  }).join('');
+}
 const METRICS = { views: 'Просмотры', viewers: 'Зрители', logins: 'Входы' };
 const personName = who => { const w = String(who).toLowerCase(); const u = S.users.find(x => x.email.toLowerCase() === w || x.login.toLowerCase() === w); return (u && u.name) || who; };
 function setPeriod(n) { S.days = n; S.stats = null; vOverview(); }
@@ -291,6 +294,7 @@ function areaChart(el, pts, dates, label) {
 function vOverview() {
   const c = s => S.users.filter(u => u.status === s).length;
   const online = S.users.filter(isOnline);
+  const total = S.users.reduce((t, u) => t + (Number(u.amount) || 0), 0);
   const ids = lessonIds();
   const n = S.days || 28, m = S.metric || 'views';
   const counts = ids.map(id => S.users.filter(u => u.status === 'active' && u.lessons.includes(id)).length);
@@ -310,6 +314,7 @@ function vOverview() {
     <div class="stat y"><b>${c('pending')}</b><span>Ждут одобрения</span></div>
     <div class="stat r"><b>${c('denied')}</b><span>Закрыт доступ</span></div>
     <div class="stat"><b><span class="dot"></span>${online.length}</b><span>Смотрят сейчас</span></div>
+    <div class="stat gold"><b>${money(total)}</b><span>Сумма оплат</span></div>
   </div>
   ${c('pending') ? `<div class="panel"><h3>Новые заявки</h3>${S.users.filter(u => u.status === 'pending').map(u => `<div class="it" style="display:flex;justify-content:space-between;align-items:center;margin:8px 0">
     <span>${esc(u.name || u.email || u.login)} <span class="sub">${esc(u.email)}</span></span><button class="btn sm" onclick="editUser(${u.row})">Открыть доступ</button></div>`).join('')}</div>` : ''}
@@ -335,26 +340,28 @@ function vOverview() {
 
 function vUsers() {
   const q = S.q.toLowerCase();
-  const list = S.users.filter(u => (S.st === 'all' || u.status === S.st) &&
+  const list = S.users.filter(u => (S.st === 'all' || u.status === S.st) && (!S.mg || S.mg === 'all' || u.manager === S.mg) &&
     (!q || [u.name, u.email, u.login, u.comment].join(' ').toLowerCase().includes(q)));
   $('#view').innerHTML = `
   <div class="top"><h2>Ученики</h2><div class="tools">
     <input id="q" placeholder="Поиск по имени или почте" value="${esc(S.q)}">
     <select id="st"><option value="all">Все статусы</option><option value="active">Активные</option><option value="pending">Ожидают</option><option value="denied">Закрытые</option></select>
+    <select id="mg"><option value="all">Все менеджеры</option>${MANAGERS.map(m => `<option>${m}</option>`).join('')}</select>
     <button class="btn" onclick="editUser(0)">Добавить ученика</button></div></div>
-  <div class="tbl"><table><thead><tr><th>Ученик</th><th>Статус</th><th>Доступные уроки</th><th>Последний вход</th><th></th></tr></thead><tbody>
+  <div class="tbl"><table><thead><tr><th>Ученик</th><th>Статус</th><th>Доступные уроки</th><th>Менеджер</th><th>Сумма</th><th>Добавлен</th><th>Последний вход</th><th></th></tr></thead><tbody>
   ${list.length ? list.map(u => `<tr>
     <td>${isOnline(u) ? '<span class="dot" title="Смотрит сейчас"></span>' : ''}<b>${esc(u.name || '—')}</b><div class="sub">${esc(u.email || u.login)}</div>${u.comment ? `<div class="sub">${esc(u.comment)}</div>` : ''}</td>
-    <td>${badge(u.status)}</td><td>${chips(u.lessons)}</td><td class="sub">${esc(u.lastLogin || '—')}</td>
+    <td>${badge(u.status)}</td><td>${chips(u.lessons)}</td><td>${esc(u.manager || '—')}</td><td>${u.amount !== '' ? money(u.amount) : '<span class="sub">—</span>'}</td><td class="sub">${fmtDate(u.added)}</td><td class="sub">${esc(u.lastLogin || '—')}</td>
     <td><div class="acts">
       ${u.status === 'pending' ? `<button class="btn sm" onclick="quick(${u.row},'active')">Одобрить</button>` : ''}
       ${u.status === 'active' ? `<button class="btn ghost sm" onclick="quick(${u.row},'denied')">Закрыть</button>` : ''}
       ${u.status === 'denied' ? `<button class="btn ghost sm" onclick="quick(${u.row},'active')">Открыть</button>` : ''}
       <button class="btn ghost sm" onclick="editUser(${u.row})">Изменить</button>
       <button class="btn danger sm" onclick="delUser(${u.row})">Удалить</button></div></td></tr>`).join('')
-    : '<tr><td colspan="5" class="empty">Никого не найдено</td></tr>'}
+    : '<tr><td colspan="8" class="empty">Никого не найдено</td></tr>'}
   </tbody></table></div>`;
-  $('#st').value = S.st;
+  $('#st').value = S.st; $('#mg').value = S.mg || 'all';
+  $('#mg').onchange = e => { S.mg = e.target.value; vUsers(); };
   $('#q').oninput = e => { S.q = e.target.value; const p = e.target.selectionStart; vUsers(); const n = $('#q'); n.focus(); n.setSelectionRange(p, p); };
   $('#st').onchange = e => { S.st = e.target.value; vUsers(); };
 }
@@ -387,16 +394,18 @@ async function run(fn, ok) {
 }
 
 function editUser(row) {
-  const u = S.users.find(x => x.row === row) || { row: 0, status: 'active', lessons: [], name: '', email: '', login: '', comment: '' };
+  const u = S.users.find(x => x.row === row) || { row: 0, status: 'active', lessons: [], name: '', email: '', login: '', comment: '', amount: '', added: today(), manager: '' };
   const ids = [...new Set([...lessonIds(), ...u.lessons])].sort((a, b) => a - b);
   openModal(`<form class="card" onsubmit="saveUser(event, ${u.row})">
     <h3>${u.row ? 'Изменить ученика' : 'Новый ученик'}</h3>
-    <label>Имя</label><input id="fName" value="${esc(u.name)}">
-    <label>Google-почта (для входа и доступа к видео)</label><input id="fEmail" type="email" value="${esc(u.email)}">
-    <div class="row2"><div><label>Логин (необязательно)</label><input id="fLogin" value="${esc(u.login)}"></div>
+    <label>Имя</label><input id="fName" value="${esc(u.name)}" oninput="checkDup(${u.row})">
+    <label>Google-почта (для входа и доступа к видео)</label><input id="fEmail" type="email" value="${esc(u.email)}" oninput="checkDup(${u.row})"><div id="dup"></div>
+    <div class="row2"><div><label>Логин (необязательно)</label><input id="fLogin" value="${esc(u.login)}" oninput="checkDup(${u.row})"></div>
     <div><label>Пароль (необязательно)</label><input id="fPass" placeholder="${u.row ? 'не менять' : ''}"></div></div>
     <label>Статус</label><select id="fStatus">
       ${['active', 'pending', 'denied'].map(s => `<option value="${s}" ${u.status === s ? 'selected' : ''}>${stLabel[s]}</option>`).join('')}</select>
+    <div class="row2"><div><label>Сумма оплаты</label><input id="fAmount" type="number" min="0" step="any" value="${esc(u.amount)}" placeholder="0"></div><div><label>Дата добавления</label><input id="fAdded" type="date" value="${esc(u.added)}"></div></div>
+    <label>Менеджер</label><select id="fManager"><option value="">— не выбран —</option>${MANAGERS.map(m => `<option ${u.manager === m ? 'selected' : ''}>${m}</option>`).join('')}</select>
     <label>Доступные уроки</label><div class="lessons">
       ${ids.length ? ids.map(id => `<label><input type="checkbox" value="${id}" ${u.lessons.includes(id) ? 'checked' : ''}>Урок ${id}</label>`).join('') : '<span class="sub">Сначала добавьте видео</span>'}</div>
     <label>Комментарий</label><textarea id="fComment" rows="2">${esc(u.comment)}</textarea>
@@ -408,8 +417,9 @@ function saveUser(e, row) {
   const lessons = [...document.querySelectorAll('.lessons input:checked')].map(i => i.value).join(',');
   const email = $('#fEmail').value.trim(), login = $('#fLogin').value.trim();
   if (!email && !login) return toast('Укажите почту или логин');
+  if (findDups(row).some(d => d.why.includes('почта') || d.why.includes('логин'))) { checkDup(row); return toast('Такой ученик уже есть — откройте его из подсказки'); }
   run(() => api('adminSaveUser', { row, name: $('#fName').value.trim(), email, login, pass: $('#fPass').value.trim(),
-    status: $('#fStatus').value, lessons, comment: $('#fComment').value.trim() }), 'Сохранено, доступ на Диске обновлён');
+    status: $('#fStatus').value, lessons, comment: $('#fComment').value.trim(), amount: $('#fAmount').value, added: $('#fAdded').value, manager: $('#fManager').value }), 'Сохранено, доступ на Диске обновлён');
 }
 function quick(row, status) {
   const u = S.users.find(x => x.row === row);
